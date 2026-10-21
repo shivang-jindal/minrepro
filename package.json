@@ -1,0 +1,24 @@
+{
+  "name": "minrepro",
+  "version": "0.1.0",
+  "description": "Turn a flaky bug report into a minimal, deterministic reproduction. Zero-dependency Node CLI.",
+  "type": "module",
+  "bin": {
+    "minrepro": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "repro",
+    "minimization",
+    "delta-debugging",
+    "ddmin",
+    "bisect",
+    "bug-report"
+  ]
+}
