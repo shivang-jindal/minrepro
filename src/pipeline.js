@@ -40,6 +40,7 @@ export async function runPipeline(o) {
   const timeoutMs = o.timeoutMs ?? 10000;
   const outDir = o.outDir ?? 'repro';
   const envSource = o.env ?? process.env;
+  const reportFormat = o.reportFormat === 'json' ? 'json' : 'md';
 
   const inputPath = isAbsolute(o.input) ? o.input : resolve(o.input);
   const inputText = readFileSync(inputPath, 'utf8');
@@ -87,8 +88,8 @@ export async function runPipeline(o) {
       note: `could not reproduce: only ${cal.matched}/${cal.total} probes matched a failure signature (need ≥3/10)`,
     });
     logStage(`[exit] ${state.note}`);
-    const written = writeArtifacts({ outDir, state, inputExt });
-    log.always(`Artifacts written to ${written.dir}/ (report.md explains the failure)`);
+    const written = writeArtifacts({ outDir, state, inputExt, reportFormat });
+    log.always(`Artifacts written to ${written.dir}/ (the report explains the failure)`);
     return { exitCode: 3, state, outDir };
   }
   const signature = oracle.signature;
@@ -235,6 +236,7 @@ export async function runPipeline(o) {
       before: { count: removable.length },
       after: { count: res.keptNames.length, names: res.keptNames },
       probes: res.probesAccepted + res.probesRejected,
+      accepted: res.probesAccepted,
       exhausted: res.exhausted,
       exhaustedReason: res.exhaustedReason,
       nextCandidates: res.nextCandidates,
@@ -288,10 +290,10 @@ export async function runPipeline(o) {
     },
     extraEnv: currentExtraEnv,
   };
-  const written = writeArtifacts({ outDir, state, inputExt });
+  const written = writeArtifacts({ outDir, state, inputExt, reportFormat });
   log.always(`minrepro: ${humanBytes(byteLen(inputText))} input -> ${humanBytes(byteLen(currentInput))}; `
     + `calibration ${cal.matched}/${cal.total}${flaky ? ' (FLAKY)' : ''}; final verify ${matched}/${verifyRuns}`);
-  log.always(`Artifacts: ${written.dir}/report.md, repro.json, run.sh, run.cmd`);
+  log.always(`Artifacts: ${written.dir}/${written.files.filter((f) => f.startsWith('report.')).join(', ')}, repro.json, run.sh, run.cmd`);
   return { exitCode, state, outDir };
 }
 

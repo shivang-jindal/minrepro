@@ -168,14 +168,67 @@ export function renderReport(state) {
 }
 
 /**
+ * Render the machine-readable report (report.json). Same facts as report.md,
+ * no prose: {title, signature, stages:[{name,before,after,accepted}],
+ * confidence, exitCode}. No timestamps — byte-identical across runs.
+ * @param {object} state full run state
+ */
+export function renderJsonReport(state) {
+  const stages = [];
+  const s = state.stages ?? {};
+  // skipped stages ran no minimization — they do not belong in the report
+  if (s.input && !s.input.skipped) {
+    stages.push({
+      name: 'input',
+      before: s.input.before?.bytes ?? null,
+      after: s.input.after?.bytes ?? null,
+      accepted: s.input.accepted ?? null,
+    });
+  }
+  if (s.code && !s.code.skipped) {
+    stages.push({
+      name: 'code',
+      before: s.code.before?.lines ?? null,
+      after: s.code.after?.lines ?? null,
+      accepted: s.code.accepted ?? null,
+    });
+  }
+  if (s.env && !s.env.skipped) {
+    stages.push({
+      name: 'env',
+      before: s.env.before?.count ?? null,
+      after: s.env.after?.count ?? null,
+      accepted: s.env.accepted ?? null,
+    });
+  }
+  return {
+    title: state.title,
+    signature: state.signature,
+    stages,
+    confidence: state.calibration
+      ? {
+        matched: state.calibration.matched,
+        total: state.calibration.total,
+        flaky: state.calibration.flaky,
+        mode: state.calibration.mode,
+      }
+      : null,
+    exitCode: state.exitCode,
+  };
+}
+
+/**
  * Write the full artifact set into outDir.
+ * `reportFormat` selects the report flavor: 'md' (default) writes report.md,
+ * 'json' writes report.json and keeps report.md OFF.
  * @returns {{dir:string, files:string[]}}
  */
-export function writeArtifacts({ outDir, state, inputExt = '.json' }) {
+export function writeArtifacts({ outDir, state, inputExt = '.json', reportFormat = 'md' }) {
   mkdirSync(outDir, { recursive: true });
   const files = [];
   const inputName = `input.min${inputExt}`;
   const scriptName = 'repro.js';
+  const reportName = reportFormat === 'json' ? 'report.json' : 'report.md';
   if (state.minimizedInput !== undefined) {
     writeFileSync(join(outDir, inputName), state.minimizedInput, 'utf8');
     files.push(inputName);
@@ -191,9 +244,11 @@ export function writeArtifacts({ outDir, state, inputExt = '.json' }) {
   writeFileSync(join(outDir, 'run.cmd'), runCmd, 'utf8');
   files.push('run.cmd');
 
-  const report = renderReport(state);
-  writeFileSync(join(outDir, 'report.md'), report, 'utf8');
-  files.push('report.md');
+  const report = reportFormat === 'json'
+    ? `${JSON.stringify(renderJsonReport(state), null, 2)}\n`
+    : renderReport(state);
+  writeFileSync(join(outDir, reportName), report, 'utf8');
+  files.push(reportName);
 
   const reproJson = {
     tool: 'minrepro',

@@ -34,5 +34,6 @@ if (!invokedDirectly) {
   await import('./module-type.test.js');
   await import('./bisect.test.js');
   await import('./pipeline.test.js');
+  await import('./report-format.test.js');
   await import('./cli.test.js');
 }

@@ -38,6 +38,8 @@ run options:
   --timeout <ms>          per-probe timeout (default 10000)
   --out <dir>             artifact directory (default repro)
   --title <name>          report title (default: the repro path)
+  --report-format <md|json>  report flavor (default md: report.md; json:
+                           machine-readable report.json, no report.md)
   --quiet                 suppress progress output
 
 verify options:
@@ -72,7 +74,7 @@ export function parseArgs(argv) {
   const wantsValue = new Set([
     'repro', 'input', 'stages', 'max-probes', 'code-max-probes', 'env-max-probes',
     'calibration', 'verify', 'timeout', 'out', 'title', 'repo', 'range', 'oracle',
-    'runs', 'n',
+    'runs', 'n', 'report-format',
   ]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -102,6 +104,10 @@ const int = (v, dflt) => (v === undefined ? dflt : (Number.isFinite(Number(v)) ?
 
 async function cmdRun(flags) {
   if (!flags.repro || !flags.input) return usageError('run requires --repro and --input');
+  const reportFormat = flags['report-format'] ?? 'md';
+  if (!['md', 'json'].includes(reportFormat)) {
+    return usageError(`--report-format must be md or json (got ${reportFormat})`);
+  }
   if (!existsSync(flags.input)) return usageError(`input file not found: ${flags.input}`);
   const scriptCheck = classifyRepro(flags.repro);
   if (scriptCheck.kind === 'script' && !existsSync(scriptCheck.path)) {
@@ -134,6 +140,7 @@ async function cmdRun(flags) {
     timeoutMs: timeout,
     outDir: flags.out ?? 'repro',
     title: flags.title,
+    reportFormat,
     quiet: !!flags.quiet,
   });
   return exitCode;

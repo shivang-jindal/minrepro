@@ -214,12 +214,12 @@ node src/cli.js --help
 node src/cli.js run --repro repro.js --input input.json   # oracle -> shrink -> verify xN -> repro/
 node src/cli.js verify repro/ -n 5                        # replay the artifact (deterministic check)
 node src/cli.js bisect --repo <git-dir> --oracle repro/ --range v1..HEAD
-node --test test/                                         # 90 tests
+node --test test/                                         # 94 tests
 ```
 
 ## v0 status
 
-**Shipped, covered by 90 passing tests:**
+**Shipped, covered by 94 passing tests:**
 
 - **Run pipeline**: oracle calibration (N probes classify the bug
   deterministic / flaky / could-not-reproduce) -> input shrinking (structured
@@ -235,6 +235,10 @@ node --test test/                                         # 90 tests
   accept/reject log, budget notes, confidence badge), `repro.json` (machine
   schema including the minimized env), the minimized input and script, and
   run scripts; `minrepro verify` replays the artifact including the recorded env
+- **`--report-format md|json`**: md (default) keeps the human `report.md`;
+  json writes a byte-deterministic `report.json` (`{title, signature,
+  stages:[{name, before, after, accepted}], confidence, exitCode}`) and keeps
+  `report.md` OFF
 - **Bisect**: walks a real git range with the minimized oracle, re-verifies
   the culprit N times, checks both endpoints (never blames the wrong commit),
   and detects the "already fixed" case honestly
