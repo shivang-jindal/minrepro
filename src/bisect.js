@@ -12,6 +12,19 @@ async function git(exec, repo, args, opts = {}) {
   return res;
 }
 
+/** Thrown by `spend()` when the probe budget is gone. Callers convert it into
+ * an honest 'inconclusive' result — a budget exhaustion is a normal outcome,
+ * not an internal error (SPEC §11: bounded, honest partial results). */
+class BudgetStop extends Error {}
+
+/** Honest 'inconclusive' result for a budget stop outside the narrow loop. */
+function budgetStopResult(commits, probes, range, maxProbes, phase) {
+  return {
+    status: 'inconclusive', range, commits: commits.length, probesUsed: probes.used,
+    message: `bisect budget exhausted (${probes.used}/${maxProbes} probes) ${phase} — no boundary found`,
+  };
+}
+
 /**
  * Run a probe at a specific commit via a detached worktree.
  * @param {object} o
@@ -58,12 +71,14 @@ export async function bisect({ repo, range, probe, verifyRuns = 3, maxProbes = 6
   const commits = revsRes.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const probes = { used: 0, max: maxProbes };
   const spend = () => { if (probes.used >= probes.max) throw new BudgetStop(); probes.used += 1; };
-  class BudgetStop extends Error {}
 
   const info = async (sha) => {
-    const res = await git(exec, repo, ['show', '-s', '--format=%h|%s|%cs', sha]);
-    const [short, subject, date] = res.stdout.trim().split('|');
-    return { sha, short, subject, date };
+    // %x1f = unit separator; subjects can legitimately contain '|' (and even
+    // tabs), so '\x1f' is the safe delimiter. Subject keeps the remainder so
+    // a subject containing the separator still renders whole.
+    const res = await git(exec, repo, ['show', '-s', '--format=%h%x1f%s%x1f%cs', sha]);
+    const parts = res.stdout.trim().split('\x1f');
+    return { sha, short: parts[0], subject: parts.slice(1, -1).join('\x1f') || parts[1], date: parts[parts.length - 1] };
   };
 
   if (commits.length === 0) {
@@ -71,21 +86,33 @@ export async function bisect({ repo, range, probe, verifyRuns = 3, maxProbes = 6
   }
   if (commits.length === 1) {
     // single commit: is it bad?
-    spend();
-    const r = await probe(commits[0], null);
-    const meta = await info(commits[0]);
-    if (r.reproduces) return { status: 'culprit', culprit: meta, probesUsed: probes.used, verified: {runs: 0}, range, commits: 1 };
-    return { status: 'no-repro', probesUsed: probes.used, range, commits: 1, message: 'oracle does not reproduce at the only commit in range' };
+    try {
+      spend();
+      const r = await probe(commits[0], null);
+      const meta = await info(commits[0]);
+      if (r.reproduces) return { status: 'culprit', culprit: meta, probesUsed: probes.used, verified: {runs: 0}, range, commits: 1 };
+      return { status: 'no-repro', probesUsed: probes.used, range, commits: 1, message: 'oracle does not reproduce at the only commit in range' };
+    } catch (e) {
+      if (!(e instanceof BudgetStop)) throw e;
+      return budgetStopResult(commits, probes, range, maxProbes, 'at the only commit in range');
+    }
   }
 
   const first = commits[0];
   const last = commits[commits.length - 1];
 
-  // pre-filter endpoints (SPEC §7.2)
-  spend();
-  const firstBad = (await probe(first, null)).reproduces;
-  spend();
-  const lastBad = (await probe(last, null)).reproduces;
+  // pre-filter endpoints (SPEC §7.2) — budget exhaustion here is an honest
+  // inconclusive, not a crash (spend() throws before any state is kept).
+  let firstBad; let lastBad;
+  try {
+    spend();
+    firstBad = (await probe(first, null)).reproduces;
+    spend();
+    lastBad = (await probe(last, null)).reproduces;
+  } catch (e) {
+    if (!(e instanceof BudgetStop)) throw e;
+    return budgetStopResult(commits, probes, range, maxProbes, 'during endpoint pre-filter');
+  }
 
   if (!firstBad && !lastBad) {
     return {
@@ -134,16 +161,25 @@ export async function bisect({ repo, range, probe, verifyRuns = 3, maxProbes = 6
   const culpritSha = commits[hi];
   // verify the culprit N times (SPEC §7.6) and the parent stays good ×N
   let verifiedRuns = 0;
-  for (let i = 0; i < verifyRuns; i++) {
-    spend();
-    const r = await probe(culpritSha, null);
-    if (!r.reproduces) {
-      return {
-        status: 'inconclusive', range, commits: commits.length, probesUsed: probes.used,
-        message: `culprit ${culpritSha.slice(0, 7)} did not reproduce on re-verification (${i}/${verifyRuns}) — flaky oracle or bad bisect; not claiming a commit`,
-      };
+  try {
+    for (let i = 0; i < verifyRuns; i++) {
+      spend();
+      const r = await probe(culpritSha, null);
+      if (!r.reproduces) {
+        return {
+          status: 'inconclusive', range, commits: commits.length, probesUsed: probes.used,
+          message: `culprit ${culpritSha.slice(0, 7)} did not reproduce on re-verification (${i}/${verifyRuns}) — flaky oracle or bad bisect; not claiming a commit`,
+        };
+      }
+      verifiedRuns += 1;
     }
-    verifiedRuns += 1;
+  } catch (e) {
+    if (!(e instanceof BudgetStop)) throw e;
+    return {
+      status: 'inconclusive', range, commits: commits.length, probesUsed: probes.used,
+      message: `bisect budget exhausted (${probes.used}/${maxProbes} probes) while verifying the culprit ${culpritSha.slice(0, 7)} — ${verifiedRuns}/${verifyRuns} verification runs completed`,
+      narrowedRange: { good: commits[lo], bad: commits[hi] },
+    };
   }
   const culprit = await info(culpritSha);
   const parent = await info(commits[lo]);

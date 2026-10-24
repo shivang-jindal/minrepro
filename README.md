@@ -212,14 +212,14 @@ trim it.
 # run from the minrepro directory
 node src/cli.js --help
 node src/cli.js run --repro repro.js --input input.json   # oracle -> shrink -> verify xN -> repro/
-node src/cli.js verify repro/ -n 5                        # replay the artifact (deterministic check)
+node src/cli.js verify repro/ -n 5                        # replay the artifact ×5 (real runs, probe-cache bypass)
 node src/cli.js bisect --repo <git-dir> --oracle repro/ --range v1..HEAD
-node --test test/                                         # 94 tests
+node --test test/                                         # 97 tests
 ```
 
 ## v0 status
 
-**Shipped, covered by 94 passing tests:**
+**Shipped, covered by 97 passing tests:**
 
 - **Run pipeline**: oracle calibration (N probes classify the bug
   deterministic / flaky / could-not-reproduce) -> input shrinking (structured
@@ -235,6 +235,10 @@ node --test test/                                         # 94 tests
   accept/reject log, budget notes, confidence badge), `repro.json` (machine
   schema including the minimized env), the minimized input and script, and
   run scripts; `minrepro verify` replays the artifact including the recorded env
+- **Honest artifacts**: no timestamps anywhere in the artifact set (two
+  identical runs are byte-identical); `verify` on an incomplete artifact dir
+  is a usage error, not "could not reproduce"; artifacts that keep env values
+  say so loudly (repro/ is sensitive when the launch env held credentials)
 - **`--report-format md|json`**: md (default) keeps the human `report.md`;
   json writes a byte-deterministic `report.json` (`{title, signature,
   stages:[{name, before, after, accepted}], confidence, exitCode}`) and keeps
@@ -252,7 +256,8 @@ node --test test/                                         # 94 tests
   minimum JSON shrink with probe-count assertions, ddmin line sets,
   stack-protected code shrink, env allowlists, oracle calibration + flaky +
   timeout paths, an end-to-end pipeline artifact check, bisect over
-  throwaway git repos, exec hygiene, budgets, and CLI exit codes
+  throwaway git repos (with real-probe-count assertions), verify-is-N-real-
+  runs regression, exec hygiene, budgets, and CLI exit codes
 
 **Deferred (v1+, per SPEC section 14):** `minrepro post` (publishing the repro
 as a GitHub issue comment), languages beyond JS/TS/Node, model-assisted step

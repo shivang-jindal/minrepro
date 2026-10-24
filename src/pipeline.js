@@ -45,7 +45,7 @@ export async function runPipeline(o) {
   const inputPath = isAbsolute(o.input) ? o.input : resolve(o.input);
   const inputText = readFileSync(inputPath, 'utf8');
   const inputExt = /\.[A-Za-z0-9]+$/.test(o.input) ? o.input.slice(o.input.lastIndexOf('.')) : '.txt';
-  const repro = /\.(js|mjs|cjs)$/.test(o.repro) && !o.repro.includes('{input}')
+  const repro = /\.(js|mjs|cjs)$/i.test(o.repro) && !o.repro.includes('{input}')
     ? (isAbsolute(o.repro) ? o.repro : resolve(o.repro))
     : o.repro;
 
@@ -316,7 +316,10 @@ function detectJson(text) {
 }
 
 function classifyRepro(repro) {
-  if (/\.(js|mjs|cjs)$/.test(repro) && !repro.includes('{input}')) {
+  // /i case-insensitivity matters on Windows, where `script.JS` runs fine via
+  // node but this classifier would otherwise misroute it to the shell path
+  // (unquoted interpolation + skipped code-min stage).
+  if (/\.(js|mjs|cjs)$/i.test(repro) && !repro.includes('{input}')) {
     const basename = repro.split(/[\\/]/).pop();
     return { kind: 'script', path: repro, basename };
   }

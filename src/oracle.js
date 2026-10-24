@@ -37,7 +37,7 @@ export class Oracle {
     this.scriptBasename = this.#scriptBasename(repro);
     // when repro points at a script file, remember its module type so
     // candidate copies in scratch dirs execute identically (ESM vs CJS)
-    this.moduleType = /\.(js|mjs|cjs)$/.test(repro) && !repro.includes('{input}')
+    this.moduleType = /\.(js|mjs|cjs)$/i.test(repro) && !repro.includes('{input}')
       ? moduleTypeFor(isAbsolute(repro) ? repro : resolve(repro))
       : 'commonjs';
     this.exec = exec;
@@ -58,14 +58,14 @@ export class Oracle {
   #scriptBasename(repro) {
     // Only meaningful when repro points at a file; shell templates get the
     // input-name-derived default so signature frames still normalize.
-    if (/\.(js|mjs|cjs)$/.test(repro) && !repro.includes('{input}')) return basename(repro);
+    if (/\.(js|mjs|cjs)$/i.test(repro) && !repro.includes('{input}')) return basename(repro);
     return 'repro-script';
   }
 
   /** How the repro is launched for a given probe dir. */
   #command(inputPath) {
     const r = this.repro;
-    const looksLikeScript = /\.(js|mjs|cjs)$/.test(r) && !r.includes('{input}');
+    const looksLikeScript = /\.(js|mjs|cjs)$/i.test(r) && !r.includes('{input}');
     if (looksLikeScript) {
       const script = isAbsolute(r) ? r : resolve(r);
       return { file: process.execPath, args: [script, inputPath] };

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Buffer } from 'node:buffer';
 
 // Env vars required for a spawned Node process to work at all.
 // Everything else from the parent environment is stripped unless the
@@ -69,23 +70,37 @@ export function exec(file, args, opts = {}) {
       windowsVerbatimArguments: isWinShell,
       detached: process.platform !== 'win32',
     });
-    let stdout = '';
-    let stderr = '';
+    // Chunks are buffered as raw bytes and decoded ONCE at close: per-chunk
+    // `String(d)` decodes multibyte UTF-8 sequences that straddle a pipe chunk
+    // boundary into U+FFFD — at OS-scheduling-dependent split points, which
+    // would make failure signatures nondeterministic across runs.
+    const chunks = { stdout: [], stderr: [] };
+    let outBytes = 0; let errBytes = 0;
     let timedOut = false;
     const MAX_OUT = 512 * 1024;
-    child.stdout.on('data', (d) => { if (stdout.length < MAX_OUT) stdout += d; });
-    child.stderr.on('data', (d) => { if (stderr.length < MAX_OUT) stderr += d; });
+    child.stdout.on('data', (d) => {
+      if (outBytes < MAX_OUT) { chunks.stdout.push(d); outBytes += d.length; }
+    });
+    child.stderr.on('data', (d) => {
+      if (errBytes < MAX_OUT) { chunks.stderr.push(d); errBytes += d.length; }
+    });
     const timer = setTimeout(() => { timedOut = true; killTree(child); }, timeoutMs);
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ code: null, signal: null, stdout, stderr: stderr + String(err && err.message), timedOut, durationMs: Date.now() - started });
+      resolve({ code: null, signal: null, stdout: bufText(chunks.stdout), stderr: bufText(chunks.stderr) + String(err && err.message), timedOut, durationMs: Date.now() - started });
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
-      resolve({ code, signal, stdout, stderr, timedOut, durationMs: Date.now() - started });
+      resolve({ code, signal, stdout: bufText(chunks.stdout), stderr: bufText(chunks.stderr), timedOut, durationMs: Date.now() - started });
     });
     if (input !== undefined) child.stdin.end(input);
   });
+}
+
+/** Decode accumulated byte chunks (capped) as ONE utf8 string. */
+function bufText(chunks) {
+  if (chunks.length === 0) return '';
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /** Create a scratch dir under the OS temp dir; returns {dir, cleanup}. */

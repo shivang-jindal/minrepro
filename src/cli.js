@@ -146,7 +146,9 @@ async function cmdRun(flags) {
   return exitCode;
 }
 
-async function cmdVerify(positional, flags) {
+async function cmdVerify(positional, flags, deps = {}) {
+  const out = deps.stdout ?? ((s) => process.stdout.write(s));
+  const err = deps.stderr ?? ((s) => process.stderr.write(s));
   const dir = positional[0];
   if (!dir) return usageError('verify requires an artifact directory');
   const jsonPath = join(dir, 'repro.json');
@@ -158,21 +160,24 @@ async function cmdVerify(positional, flags) {
   const scriptPath = join(dir, meta.files?.script ?? 'repro.js');
   const inputPath = join(dir, meta.files?.input ?? 'input.min.json');
   if (!existsSync(scriptPath) || !existsSync(inputPath)) {
-    process.stderr.write(`minrepro verify: missing ${scriptPath} or ${inputPath}\n`);
-    return 3;
+    err(`minrepro verify: missing ${scriptPath} or ${inputPath}\n`);
+    return 2;
   }
   const oracle = new Oracle({
     repro: scriptPath, inputText: readFileSync(inputPath, 'utf8'),
-    inputName: inputPath, exec: realExec, timeoutMs: timeout,
+    inputName: inputPath, exec: deps.exec ?? realExec, timeoutMs: timeout,
   });
   oracle.signature = meta.signature;
   let matched = 0;
   for (let i = 0; i < runs; i++) {
-    // replay with the artifact's minimized env (env-gated bugs need it)
-    const r = await oracle.probeCandidate(oracle.inputText, { env: meta.extraEnv ?? {} });
+    // replay with the artifact's minimized env (env-gated bugs need it).
+    // fresh:true is load-bearing: probe results are cached, so without it the
+    // N verification runs would report the SAME first result N times and a
+    // flaky bug could be certified from a single real execution.
+    const r = await oracle.probeCandidate(oracle.inputText, { env: meta.extraEnv ?? {} }, { fresh: true });
     if (r.reproduces) matched += 1;
   }
-  process.stdout.write(`minrepro verify: reproduced ${matched}/${runs} runs `
+  out(`minrepro verify: reproduced ${matched}/${runs} runs `
     + `(signature: ${meta.signature?.kind ?? 'unknown'})\n`);
   if (matched === runs) return 0;
   if (matched > 0) return 1;
@@ -282,7 +287,7 @@ export async function main(argv, deps = {}) {
   const restPos = positional.slice(1);
   switch (cmd) {
     case 'run': return cmdRun(flags);
-    case 'verify': return cmdVerify(restPos, flags);
+    case 'verify': return cmdVerify(restPos, flags, { exec: deps.exec, stdout: deps.stdout, stderr: deps.stderr });
     case 'bisect': return cmdBisect(flags);
     case '--help': case '-h': case 'help': execOut(HELP); return 0;
     case '--version': case '-V': execOut(`minrepro ${VERSION}\n`); return 0;

@@ -140,7 +140,8 @@ test('repro.json round-trips machine state including extraEnv', () => {
     assert.deepEqual(meta.calibration, state.calibration);
     assert.deepEqual(meta.finalVerify, { total: 10, matched: 10 });
     assert.deepEqual(meta.extraEnv, { BUG_GATE: 'on' });
-    assert.ok(typeof meta.createdAt === 'string');
+    // artifact set must be byte-identical across runs — no timestamps anywhere
+    assert.equal(meta.createdAt, undefined);
     assert.ok(meta.bisect.status === 'culprit');
   } finally {
     scratch.cleanup();
