@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import { resolve } from 'node:path';
 import { ENV_ALLOWLIST, cleanEnv, exec, scratchDir } from '../src/exec.js';
 import { runNode } from './helpers.js';
@@ -78,9 +79,11 @@ test('exec round-trips stdin input', async () => {
 test('scratchDir creates under the OS temp dir and cleans up', () => {
   const scratch = scratchDir('minrepro-scratch-test-');
   assert.ok(existsSync(scratch.dir));
-  assert.ok(scratch.dir.toLowerCase().startsWith(process.env.TEMP.toLowerCase())
-    || scratch.dir.toLowerCase().startsWith(process.env.TMP?.toLowerCase() ?? '\u0000'),
-  `scratch dir not under tmpdir: ${scratch.dir}`);
+  // os.tmpdir() is the portability-correct source: %TEMP%/%TMP% are Windows
+  // only and undefined on POSIX runners (they used to crash this assertion).
+  const tmp = os.tmpdir().replace(/[\\/]+\$/, '').toLowerCase();
+  const dir = scratch.dir.replace(/[\\/]+\$/, '').toLowerCase();
+  assert.ok(dir.startsWith(tmp), 'scratch dir not under tmpdir: ' + scratch.dir);
   scratch.cleanup();
   assert.ok(!existsSync(scratch.dir));
 });

@@ -75,11 +75,14 @@ test('pipeline e2e: noisy JSON + repro script -> full repro/ artifacts, exit 0',
     assert.equal(meta.stages.input.strategy, 'json-shrink');
     assert.deepEqual(meta.finalVerify, { total: 2, matched: 2 });
 
-    // the artifact is self-contained: run.cmd exits nonzero = bug present
-    const cmdRes = await run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'run.cmd'], { cwd: outDir });
-    assert.ok(cmdRes.code !== null, `cmd.exe failed to start: ${cmdRes.stderr}`);
-    assert.ok(cmdRes.code !== 0, 'artifact run.cmd must exit nonzero (bug present)');
-    assert.ok(cmdRes.stderr.includes('E2E_MARK'));
+    // the artifact is self-contained: run.cmd (Windows) / run.sh (POSIX)
+    // exits nonzero = bug present
+    const artifactRes = process.platform === 'win32'
+      ? await run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'run.cmd'], { cwd: outDir })
+      : await run('/bin/sh', ['run.sh'], { cwd: outDir });
+    assert.ok(artifactRes.code !== null, `artifact runner failed to start: ${artifactRes.stderr}`);
+    assert.ok(artifactRes.code !== 0, 'artifact run script must exit nonzero (bug present)');
+    assert.ok(artifactRes.stderr.includes('E2E_MARK'));
 
     assert.ok(lines.some((l) => l.includes('final verify 2/2')), 'progress summary not logged');
   } finally {
